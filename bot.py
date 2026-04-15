@@ -1,54 +1,57 @@
 import telebot
-import json
 import os
 import time
 import uuid
 from telebot import types
 from flask import Flask
 from threading import Thread
+from pymongo import MongoClient
 
 # --- CONFIGURATION ---
 BOT_TOKEN = "8761465405:AAEtsT_AnDuClMihQlj3hYjVmzR_ZwGvMaY"
 ADMINS = [6450490197, 7520591656]
 OWNER_HANDLE = "@Ayush20443"
-DB_FILE = "luxury_db.json"
+
+# --- MONGODB CLOUD SETUP ---
+MONGO_URI = "mongodb+srv://aayushkumar20443_db_user:yvej53e2@tgbot.20bdvy0.mongodb.net/?retryWrites=true&w=majority"
 
 CHANNELS = ["@black_bulles", "@DARKSTOREAURA", "@MyDressUpDarlingTamilll", "@+f3wLucRJlnlmYWNl", "@SenjiLooters", "@arshxproofs"]
 
 bot = telebot.TeleBot(BOT_TOKEN)
+
+client = MongoClient(MONGO_URI)
+db_mongo = client["LuxuryBotDB"]
+collection = db_mongo["MainData"]
 
 # --- FLASK SERVER SETUP (For Render) ---
 server = Flask(__name__)
 
 @server.route('/')
 def home():
-    return "Luxury Bot is running 24/7 on Render!"
+    return "Luxury Bot is running 24/7 on Render with MongoDB!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     server.run(host="0.0.0.0", port=port)
 
-# Temporary memory to store long file IDs
+# Temporary memory for handling long file IDs
 TEMP_MEDIA = {}
 
-# --- DATABASE LOGIC ---
+# --- DATABASE LOGIC (Cloud Based) ---
 def load_db():
-    if not os.path.exists(DB_FILE):
-        data = {"users": {}, "free_videos": [], "luxury_videos": []}
-        with open(DB_FILE, "w") as f:
-            json.dump(data, f)
-        return data
+    data = collection.find_one({"_id": "main_db"})
+    if not data:
+        data = {"_id": "main_db", "users": {}, "free_videos": [], "luxury_videos": []}
+        collection.insert_one(data)
     
-    with open(DB_FILE, "r") as f:
-        db = json.load(f)
-        if "free_videos" not in db: db["free_videos"] = []
-        if "luxury_videos" not in db: db["luxury_videos"] = []
-        return db
+    if "free_videos" not in data: data["free_videos"] = []
+    if "luxury_videos" not in data: data["luxury_videos"] = []
+    return data
 
 def save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+    collection.update_one({"_id": "main_db"}, {"$set": data}, upsert=True)
 
+# --- JOIN CHECKER ---
 def is_user_joined(user_id):
     for channel in CHANNELS:
         try:
@@ -155,7 +158,7 @@ def handle_query(call):
         save_db(db)
         
         del TEMP_MEDIA[short_id]
-        bot.edit_message_text(f"✅ Saved in {target.split('_')[0].upper()} category!", call.message.chat.id, call.message.message_id)
+        bot.edit_message_text(f"✅ Saved permanently to MongoDB in {target.split('_')[0].upper()} category!", call.message.chat.id, call.message.message_id)
 
     elif call.data == "get_free":
         if db["free_videos"]:
@@ -186,11 +189,9 @@ def admin_stats(message):
         bot.reply_to(message, f"📊 **Stats:**\nTotal Users: {len(db['users'])}\nActive 24h: {active}")
 
 if __name__ == "__main__":
-    # Start Flask Server in background
     print("Starting Flask Server...")
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
     
-    # Start Telegram Bot
-    print("Bot is LIVE on Render...")
+    print("Bot is LIVE with MongoDB Backup...")
     bot.infinity_polling()
